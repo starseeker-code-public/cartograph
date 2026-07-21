@@ -9,6 +9,7 @@ from cartograph.orders.router import router as orders_router
 from cartograph.routes.router import router as routes_router
 from cartograph.service_areas.router import router as service_areas_router
 from cartograph.settings import settings
+from cartograph.tiles.router import router as tiles_router
 
 log = structlog.get_logger()
 
@@ -26,6 +27,8 @@ app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(routes_router, prefix=settings.api_prefix)
 app.include_router(drivers_router, prefix=settings.api_prefix)
 app.include_router(geofences_router, prefix=settings.api_prefix)
+# Tile paths (/tiles/... and /api/tiles/stats) are absolute inside the router.
+app.include_router(tiles_router)
 
 app.add_middleware(
     CORSMiddleware,

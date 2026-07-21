@@ -3,11 +3,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2.shape import from_shape, to_shape
+from redis.asyncio import Redis
 from shapely.geometry import mapping
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cartograph.deps import CurrentUser, get_current_user, get_db
+from cartograph.deps import CurrentUser, get_current_user, get_db, get_redis
 from cartograph.service_areas.geojson import GeoJSONError, parse_multipolygon
 from cartograph.service_areas.models import ServiceArea
 from cartograph.service_areas.schemas import (
@@ -16,6 +17,7 @@ from cartograph.service_areas.schemas import (
     ServiceAreaOut,
     ServiceAreaUpdate,
 )
+from cartograph.tiles.cache import invalidate_tenant_tiles
 
 router = APIRouter(prefix="/service-areas", tags=["service-areas"])
 
@@ -49,6 +51,7 @@ async def create_service_area(
     payload: ServiceAreaCreate,
     current: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> ServiceAreaOut:
     try:
         multi = parse_multipolygon(payload.geometry)
@@ -66,6 +69,7 @@ async def create_service_area(
     db.add(area)
     await db.commit()
     await db.refresh(area)
+    await invalidate_tenant_tiles(redis, current.tenant_id)
     return _to_out(area)
 
 
@@ -122,6 +126,7 @@ async def update_service_area(
     payload: ServiceAreaUpdate,
     current: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> ServiceAreaOut:
     area = await _get_owned(db, current, area_id)
 
@@ -139,6 +144,7 @@ async def update_service_area(
 
     await db.commit()
     await db.refresh(area)
+    await invalidate_tenant_tiles(redis, current.tenant_id)
     return _to_out(area)
 
 
@@ -147,7 +153,9 @@ async def delete_service_area(
     area_id: UUID,
     current: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> None:
     area = await _get_owned(db, current, area_id)
     await db.delete(area)
     await db.commit()
+    await invalidate_tenant_tiles(redis, current.tenant_id)
