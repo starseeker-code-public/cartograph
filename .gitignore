@@ -68,3 +68,6 @@ Thumbs.db
 *.key
 *.crt
 *.p12
+
+# TypeScript incremental build state
+*.tsbuildinfo

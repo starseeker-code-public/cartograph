@@ -3,8 +3,9 @@
 FROM node:22-slim AS web-builder
 
 WORKDIR /web
-COPY apps/web/package.json apps/web/package-lock.json* ./
-RUN npm ci || npm install
+# npm ci only — falling back to npm install would silently unpin the lockfile.
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci
 COPY apps/web/ .
 RUN npm run build
 

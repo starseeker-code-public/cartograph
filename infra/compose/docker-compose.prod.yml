@@ -98,7 +98,9 @@ services:
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
     volumes:
       - ./maintenance.sh:/maintenance.sh:ro
-      - ${BACKUP_DIR:-./backups}:/backups
+      # Relative paths resolve against this compose file's directory, so
+      # the default lands at the repository root as the runbooks say.
+      - ${BACKUP_DIR:-../../backups}:/backups
     depends_on:
       postgres:
         condition: service_healthy

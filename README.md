@@ -425,6 +425,7 @@ Operational requirements (all wired in `infra/compose/docker-compose.prod.yml`):
 - **Rate limiting** on `POST /api/drivers/{id}/location` (per driver — generous, the device is the source of truth).
 - **HTTPS** mandatory in production via Caddy.
 - **No driver-location sharing across tenants**, ever.
+- **Stateless JWTs** (24 h TTL): logout clears the cookie but cannot revoke an already-captured token — there is no server-side denylist in V1. Rotate `SECRET_KEY` to invalidate all sessions.
 
 ---
 

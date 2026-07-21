@@ -4,11 +4,13 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
-COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen --no-install-project --no-dev || uv sync --no-install-project --no-dev
+# --frozen with no fallback: a build must fail loudly on a stale lockfile
+# rather than silently resolve unpinned versions into a prod image.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
 
 COPY . .
-RUN uv sync --no-dev
+RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim-bookworm
 

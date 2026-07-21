@@ -90,6 +90,6 @@ osm-load city="madrid":
 
 # ── Full local reset ──────────────────────────────────────────────────────────
 
-reset: down
-    docker volume rm cartograph_cartograph_pg || true
+reset:
+    docker compose -f infra/compose/docker-compose.dev.yml down -v
     just up

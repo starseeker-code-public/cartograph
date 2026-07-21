@@ -22,6 +22,9 @@ from cartograph.deps import CurrentUser, get_current_user, get_db
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
+# Newest orders aggregated per request; older ones need a narrower time range.
+_MAX_ROWS = 50_000
+
 
 class CoverageCell(BaseModel):
     hex: str
@@ -32,6 +35,8 @@ class CoverageResponse(BaseModel):
     resolution: int
     kind: Literal["pickup", "delivery"]
     total_orders: int
+    # True when the window matched more than the row cap; narrow `from`/`to`.
+    truncated: bool = False
     cells: list[CoverageCell]
 
 
@@ -54,15 +59,23 @@ async def coverage(
         clauses.append("created_at < :to_ts")
         params["to_ts"] = to
 
+    # Hard row cap: every other endpoint bounds its result set; without this,
+    # a wide-open time range materializes the tenant's entire order history
+    # and burns CPU on per-row H3 hashing (DoS vector).
+    params["cap"] = _MAX_ROWS + 1
     rows = (
         await db.execute(
             text(
                 f"SELECT ST_X({column}::geometry) AS lng, ST_Y({column}::geometry) AS lat "  # noqa: S608
-                f"FROM orders WHERE {' AND '.join(clauses)}"
+                f"FROM orders WHERE {' AND '.join(clauses)} "
+                f"ORDER BY created_at DESC LIMIT :cap"
             ),
             params,
         )
     ).all()
+
+    truncated = len(rows) > _MAX_ROWS
+    rows = rows[:_MAX_ROWS]
 
     counts: dict[str, int] = {}
     for row in rows:
@@ -73,4 +86,10 @@ async def coverage(
         CoverageCell(hex=hex_id, count=count)
         for hex_id, count in sorted(counts.items(), key=lambda kv: -kv[1])
     ]
-    return CoverageResponse(resolution=resolution, kind=kind, total_orders=len(rows), cells=cells)
+    return CoverageResponse(
+        resolution=resolution,
+        kind=kind,
+        total_orders=len(rows),
+        truncated=truncated,
+        cells=cells,
+    )

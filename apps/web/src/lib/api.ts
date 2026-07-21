@@ -45,6 +45,9 @@ export interface Point {
   lat: number;
 }
 
+/** ST_LineMerge output: MultiLineString when the path has discontinuities. */
+export type RouteGeometry = GeoJSON.LineString | GeoJSON.MultiLineString;
+
 export interface User {
   id: string;
   tenant_id: string;

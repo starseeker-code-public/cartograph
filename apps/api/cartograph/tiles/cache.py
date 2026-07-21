@@ -8,17 +8,20 @@ from redis.asyncio import Redis
 
 from cartograph.settings import settings
 
-HITS_KEY = "tile:stats:hits"
-MISSES_KEY = "tile:stats:misses"
-
 
 def tile_key(tenant_id: UUID, z: int, x: int, y: int) -> str:
     return f"tile:{tenant_id}:{z}:{x}:{y}"
 
 
+def _stats_key(tenant_id: UUID, kind: str) -> str:
+    # Per-tenant counters: global ones would leak other tenants' traffic
+    # volume through /api/tiles/stats.
+    return f"tile:stats:{tenant_id}:{kind}"
+
+
 async def get_cached_tile(redis: Redis, tenant_id: UUID, z: int, x: int, y: int) -> bytes | None:
     cached = await redis.get(tile_key(tenant_id, z, x, y))
-    await redis.incr(HITS_KEY if cached is not None else MISSES_KEY)
+    await redis.incr(_stats_key(tenant_id, "hits" if cached is not None else "misses"))
     # The client is created with decode_responses=False, so str never occurs.
     return cached if isinstance(cached, bytes) else None
 
@@ -35,6 +38,7 @@ async def invalidate_tenant_tiles(redis: Redis, tenant_id: UUID) -> int:
     return len(keys)
 
 
-async def cache_stats(redis: Redis) -> tuple[int, int]:
-    hits, misses = await redis.get(HITS_KEY), await redis.get(MISSES_KEY)
+async def cache_stats(redis: Redis, tenant_id: UUID) -> tuple[int, int]:
+    hits = await redis.get(_stats_key(tenant_id, "hits"))
+    misses = await redis.get(_stats_key(tenant_id, "misses"))
     return int(hits or 0), int(misses or 0)

@@ -29,8 +29,9 @@ export function coverageToGeoJSON(
       },
       geometry: {
         type: "Polygon",
-        // h3-js returns [lat, lng]; GeoJSON wants [lng, lat].
-        coordinates: [cellToBoundary(cell.hex).map(([lat, lng]) => [lng, lat])],
+        // formatAsGeoJSON=true: [lng, lat] order, closed ring (first vertex
+        // repeated), and antimeridian-normalized longitudes.
+        coordinates: [cellToBoundary(cell.hex, true)],
       },
     })),
   };

@@ -101,3 +101,13 @@ async def test_eta_endpoint_rejects_bad_vehicle(
         headers=auth_headers,
     )
     assert resp.status_code == 422
+
+
+async def test_same_vertex_geometry_is_valid_linestring(
+    road_grid: None, db_session: AsyncSession
+) -> None:
+    """Two points snapping to one vertex must still yield RFC 7946-valid
+    geometry (>= 2 positions), not an empty coordinates array."""
+    route = await shortest_path(db_session, A_LNG, A_LAT, A_LNG + 0.0001, A_LAT)
+    assert route.geometry["type"] == "LineString"
+    assert len(route.geometry["coordinates"]) == 2

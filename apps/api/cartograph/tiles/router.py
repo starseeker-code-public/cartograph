@@ -61,9 +61,9 @@ async def tile(
 
 @router.get("/api/tiles/stats", response_model=TileStats)
 async def tile_stats(
-    _current: Annotated[CurrentUser, Depends(get_current_user)],
+    current: Annotated[CurrentUser, Depends(get_current_user)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> TileStats:
-    hits, misses = await cache_stats(redis)
+    hits, misses = await cache_stats(redis, current.tenant_id)
     total = hits + misses
     return TileStats(hits=hits, misses=misses, hit_ratio=hits / total if total else 0.0)

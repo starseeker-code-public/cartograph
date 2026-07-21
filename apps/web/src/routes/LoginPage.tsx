@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -5,6 +6,7 @@ import { api, ApiError } from "../lib/api";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +18,9 @@ export function LoginPage() {
     setError(null);
     try {
       await api.post("/api/auth/login", { email, password });
+      // Drop every cached query — MapPage would otherwise mount against the
+      // stale 401 in the ["me"] cache and bounce straight back here.
+      queryClient.clear();
       await navigate({ to: "/" });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Login failed");

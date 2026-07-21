@@ -16,11 +16,15 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
+import structlog
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cartograph.settings import settings
+
+log = structlog.get_logger()
 
 
 class RoutingError(Exception):
@@ -39,7 +43,11 @@ class RouteNotFound(RoutingError):
 class RouteResult:
     duration_s: float
     distance_m: float
-    geometry: dict[str, Any]  # GeoJSON LineString
+    # GeoJSON LineString, or MultiLineString when the merged path has
+    # repeated coordinates/discontinuities (common in real OSM imports).
+    # Segment direction after ST_LineMerge is arbitrary — render, don't
+    # animate along it.
+    geometry: dict[str, Any]
 
 
 def eta_cache_key(
@@ -55,12 +63,24 @@ async def road_network_available(db: AsyncSession) -> bool:
 
 
 async def _nearest_vertex(db: AsyncSession, lng: float, lat: float) -> int:
+    # The KNN `<->` on 4326 geometry ranks by *degree* distance, where
+    # longitude is compressed by cos(lat) — it can prefer a metrically
+    # farther vertex. Take an index-driven candidate set, then re-rank the
+    # candidates by true geodesic meters.
     result = await db.execute(
-        text(
-            "SELECT id FROM ways_vertices_pgr "
-            "ORDER BY the_geom <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) "
-            "LIMIT 1"
-        ),
+        text("""
+            SELECT id FROM (
+                SELECT id, the_geom
+                FROM ways_vertices_pgr
+                ORDER BY the_geom <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)
+                LIMIT 16
+            ) candidates
+            ORDER BY ST_Distance(
+                the_geom::geography,
+                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+            )
+            LIMIT 1
+            """),
         {"lng": lng, "lat": lat},
     )
     vertex_id = result.scalar_one_or_none()
@@ -86,9 +106,14 @@ async def shortest_path(
     dst = await _nearest_vertex(db, to_lng, to_lat)
 
     if src == dst:
-        # Same nearest node — effectively zero road distance.
-        point = {"type": "LineString", "coordinates": []}
-        return RouteResult(duration_s=0.0, distance_m=0.0, geometry=point)
+        # Same nearest node — effectively zero road distance. A degenerate
+        # two-point line keeps the GeoJSON valid (RFC 7946 requires >= 2
+        # positions); an empty coordinates array is not a legal LineString.
+        line = {
+            "type": "LineString",
+            "coordinates": [[from_lng, from_lat], [to_lng, to_lat]],
+        }
+        return RouteResult(duration_s=0.0, distance_m=0.0, geometry=line)
 
     result = await db.execute(
         text("""
@@ -125,13 +150,24 @@ async def shortest_path_cached(
     to_lat: float,
     vehicle: str = "all",
 ) -> tuple[RouteResult, bool]:
-    """Cache-through shortest_path. Returns (result, was_cache_hit)."""
+    """Cache-through shortest_path. Returns (result, was_cache_hit).
+
+    A Redis outage degrades to uncached computation — the cache must never
+    take routing (or order intake, which calls this best-effort) down with it.
+    """
     key = eta_cache_key(from_lng, from_lat, to_lng, to_lat, vehicle)
-    cached = await redis.get(key)
+    try:
+        cached = await redis.get(key)
+    except RedisError:
+        log.warning("eta cache read failed; computing uncached", key=key)
+        cached = None
     if cached is not None:
         payload = json.loads(cached)
         return RouteResult(**payload), True
 
     route = await shortest_path(db, from_lng, from_lat, to_lng, to_lat)
-    await redis.set(key, json.dumps(asdict(route)), ex=settings.eta_cache_ttl)
+    try:
+        await redis.set(key, json.dumps(asdict(route)), ex=settings.eta_cache_ttl)
+    except RedisError:
+        log.warning("eta cache write failed", key=key)
     return route, False

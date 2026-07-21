@@ -6,7 +6,7 @@ import { CoveragePanel, type CoverageSettings } from "../components/CoveragePane
 import { DriversPanel } from "../components/DriversPanel";
 import { MapView } from "../components/MapView";
 import { OrdersPanel } from "../components/OrdersPanel";
-import type { Driver, Order, User } from "../lib/api";
+import type { Driver, Order, RouteGeometry, User } from "../lib/api";
 import { api, ApiError } from "../lib/api";
 import type { CoverageFeatureProps } from "../lib/coverage";
 
@@ -17,7 +17,7 @@ export function MapPage() {
   const [tab, setTab] = useState<Tab>("orders");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
-  const [routeLine, setRouteLine] = useState<GeoJSON.LineString | null>(null);
+  const [routeLine, setRouteLine] = useState<RouteGeometry | null>(null);
   const [coverage, setCoverage] = useState<GeoJSON.FeatureCollection<
     GeoJSON.Polygon,
     CoverageFeatureProps
@@ -67,7 +67,24 @@ export function MapPage() {
       </div>
     );
   }
-  if (me.isError) return null; // redirecting to /login
+  if (me.isError) {
+    if (me.error instanceof ApiError && me.error.status === 401) {
+      return null; // redirecting to /login (effect above)
+    }
+    // Transient API failure (restart, network blip) — offer a retry instead
+    // of a permanently blank page.
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-slate-900">
+        <p className="text-sm text-slate-300">Couldn't reach the Cartograph API.</p>
+        <button
+          onClick={() => void me.refetch()}
+          className="rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-500"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full bg-slate-900">
@@ -139,10 +156,12 @@ export function MapPage() {
           onSelectOrder={(id) => {
             setTab("orders");
             setSelectedOrderId(id);
+            setRouteLine(null); // stale route belongs to the previous selection
           }}
           onSelectDriver={(id) => {
             setTab("drivers");
             setSelectedDriverId(id);
+            setRouteLine(null);
           }}
         />
       </main>

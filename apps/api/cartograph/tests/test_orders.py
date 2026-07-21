@@ -198,3 +198,35 @@ async def test_order_tenant_isolation(
     assert (
         await client.get(f"/api/orders/{created['id']}", headers=other_headers)
     ).status_code == 404
+
+
+async def test_unassign_driver_with_null(
+    road_grid: None,
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    tenant_user: tuple[Tenant, User, str],
+    db_session: AsyncSession,
+) -> None:
+    """PATCH driver_id=null unassigns and reverts assigned → created."""
+    tenant, _, _ = tenant_user
+    driver = await _make_driver(db_session, tenant)
+    created = (await client.post("/api/orders", json=order_payload(), headers=auth_headers)).json()
+
+    assigned = await client.patch(
+        f"/api/orders/{created['id']}",
+        json={"driver_id": str(driver.id), "state": "assigned"},
+        headers=auth_headers,
+    )
+    assert assigned.json()["state"] == "assigned"
+
+    unassigned = await client.patch(
+        f"/api/orders/{created['id']}", json={"driver_id": None}, headers=auth_headers
+    )
+    assert unassigned.status_code == 200, unassigned.text
+    body = unassigned.json()
+    assert body["driver_id"] is None
+    assert body["state"] == "created"
+
+    # Absent driver_id still means "no change".
+    noop = await client.patch(f"/api/orders/{created['id']}", json={}, headers=auth_headers)
+    assert noop.json()["driver_id"] is None

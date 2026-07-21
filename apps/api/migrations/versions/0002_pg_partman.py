@@ -27,9 +27,18 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Create the partman schema + extension. Tolerate absence (it's a stretch
     # dependency); the default partition still catches writes.
+    #
+    # Data-safe on non-empty databases: rows accumulated in the 0001 default
+    # partition are migrated into real monthly partitions (the premade range
+    # starts at the oldest existing row), and only then is the default
+    # re-attached — attaching a default that still holds rows covered by real
+    # partitions would fail Postgres's overlap validation and block the deploy.
     op.execute(
         """
         DO $$
+        DECLARE
+            first_row     timestamptz;
+            covered_until timestamptz;
         BEGIN
             IF EXISTS (
                 SELECT 1 FROM pg_available_extensions WHERE name = 'pg_partman'
@@ -40,20 +49,35 @@ def upgrade() -> None:
                 -- Detach the default partition so partman can take over.
                 ALTER TABLE geofence_events DETACH PARTITION geofence_events_default;
 
+                SELECT min(occurred_at) INTO first_row FROM geofence_events_default;
+
                 -- p_default_table := false: we manage the default partition
                 -- ourselves (created in 0001); letting partman create its own
                 -- would collide on the geofence_events_default name.
                 PERFORM partman.create_parent(
-                    p_parent_table   := 'public.geofence_events',
-                    p_control        := 'occurred_at',
-                    p_type           := 'range',
-                    p_interval       := '1 month',
-                    p_premake        := 4,
-                    p_default_table  := false
+                    p_parent_table    := 'public.geofence_events',
+                    p_control         := 'occurred_at',
+                    p_type            := 'range',
+                    p_interval        := '1 month',
+                    p_premake         := 4,
+                    p_start_partition := date_trunc('month', COALESCE(first_row, now()))::text,
+                    p_default_table   := false
                 );
 
-                -- Re-attach the default partition for any rows that fall
-                -- outside the premade range.
+                -- Premade partitions cover [start .. current month + 4].
+                covered_until := date_trunc('month', now()) + interval '5 months';
+
+                IF first_row IS NOT NULL THEN
+                    INSERT INTO geofence_events
+                    SELECT * FROM geofence_events_default
+                    WHERE occurred_at < covered_until;
+
+                    DELETE FROM geofence_events_default
+                    WHERE occurred_at < covered_until;
+                END IF;
+
+                -- Anything left (bogus far-future timestamps) legally stays in
+                -- the default partition.
                 ALTER TABLE geofence_events ATTACH PARTITION geofence_events_default DEFAULT;
             END IF;
         END;

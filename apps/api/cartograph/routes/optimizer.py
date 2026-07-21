@@ -36,12 +36,13 @@ class Stop:
 
 
 def _cost(matrix: CostMatrix, u: int, v: int) -> float:
+    """Missing pairs cost inf — reachability is asymmetric on real one-way
+    road networks, and a candidate move touching an unreachable pair must be
+    priced out, not abort the search. optimize_sequence raises only if the
+    best final tour itself is unbuildable."""
     if u == v:
         return 0.0
-    try:
-        return matrix[(u, v)]
-    except KeyError:
-        raise UnreachableStop(f"No road path from vertex {u} to {v}") from None
+    return matrix.get((u, v), float("inf"))
 
 
 def _pickup_position(stops: list[Stop], order_id: UUID) -> int | None:
@@ -199,7 +200,9 @@ def optimize_sequence(
     for first_choice in range(starts):
         tour = _nearest_neighbor(matrix, stops, start_vertex, first_choice)
         tour, cost = _local_search(matrix, stops, start_vertex, tour, max_passes)
-        if cost < best_cost:
+        if best_tour is None or cost < best_cost:
             best_tour, best_cost = tour, cost
     assert best_tour is not None
+    if best_cost == float("inf"):
+        raise UnreachableStop("No feasible tour: some stop is unreachable from the ones before it")
     return best_tour

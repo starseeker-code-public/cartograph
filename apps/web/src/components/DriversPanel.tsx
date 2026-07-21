@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import type { Driver, OptimizeResult, Order } from "../lib/api";
+import type { Driver, OptimizeResult, Order, RouteGeometry } from "../lib/api";
 import { api } from "../lib/api";
 import { formatDistance, formatDuration, formatTime } from "../lib/format";
 
@@ -10,13 +10,14 @@ interface Props {
   orders: Order[];
   selectedDriverId: string | null;
   onSelect: (driverId: string | null) => void;
-  onShowRoute: (line: GeoJSON.LineString | null) => void;
+  onShowRoute: (line: RouteGeometry | null) => void;
 }
 
 export function DriversPanel({ drivers, orders, selectedDriverId, onSelect, onShowRoute }: Props) {
   const selected = drivers.find((d) => d.id === selectedDriverId) ?? null;
   return selected ? (
     <DriverDetail
+      key={selected.id} // remount on driver switch: plan state must not leak
       driver={selected}
       orders={orders}
       onBack={() => {
@@ -63,7 +64,7 @@ function DriverDetail({
   driver: Driver;
   orders: Order[];
   onBack: () => void;
-  onShowRoute: (line: GeoJSON.LineString | null) => void;
+  onShowRoute: (line: RouteGeometry | null) => void;
 }) {
   const [plan, setPlan] = useState<OptimizeResult | null>(null);
   const assigned = orders.filter(

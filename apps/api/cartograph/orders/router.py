@@ -14,6 +14,7 @@ from cartograph.orders.models import Order, OrderState
 from cartograph.orders.schemas import OrderCreate, OrderOut, OrderUpdate, Point
 from cartograph.routes.engine import RoutingError, shortest_path_cached
 from cartograph.routes.schemas import EtaResponse
+from cartograph.tiles.cache import invalidate_tenant_tiles
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -49,12 +50,15 @@ def _to_out(order: Order) -> OrderOut:
     )
 
 
-async def _get_owned(db: AsyncSession, current: CurrentUser, order_id: UUID) -> Order:
-    order = (
-        await db.execute(
-            select(Order).where(Order.id == order_id, Order.tenant_id == current.tenant_id)
-        )
-    ).scalar_one_or_none()
+async def _get_owned(
+    db: AsyncSession, current: CurrentUser, order_id: UUID, for_update: bool = False
+) -> Order:
+    query = select(Order).where(Order.id == order_id, Order.tenant_id == current.tenant_id)
+    if for_update:
+        # Serializes concurrent PATCHes so two writers can't both pass the
+        # state-machine check against the same stale state.
+        query = query.with_for_update()
+    order = (await db.execute(query)).scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return order
@@ -97,6 +101,9 @@ async def create_order(
     db.add(order)
     await db.commit()
     await db.refresh(order)
+    # Tiles embed order pins + geofence rings; drop the tenant's cache so the
+    # map reflects the change within a tile refresh, not the 300 s TTL.
+    await invalidate_tenant_tiles(redis, current.tenant_id)
     return _to_out(order)
 
 
@@ -134,22 +141,31 @@ async def update_order(
     payload: OrderUpdate,
     current: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> OrderOut:
-    order = await _get_owned(db, current, order_id)
+    order = await _get_owned(db, current, order_id, for_update=True)
 
-    if payload.driver_id is not None:
-        driver = (
-            await db.execute(
-                select(Driver).where(
-                    Driver.id == payload.driver_id, Driver.tenant_id == current.tenant_id
+    # Tri-state: absent = keep, null = unassign, uuid = assign.
+    if "driver_id" in payload.model_fields_set:
+        if payload.driver_id is None:
+            order.driver_id = None
+            # An assigned order with no driver is a contradiction; fall back
+            # to created unless the caller also set an explicit state.
+            if order.state == OrderState.ASSIGNED.value and payload.state is None:
+                order.state = OrderState.CREATED.value
+        else:
+            driver = (
+                await db.execute(
+                    select(Driver).where(
+                        Driver.id == payload.driver_id, Driver.tenant_id == current.tenant_id
+                    )
                 )
-            )
-        ).scalar_one_or_none()
-        if driver is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown driver"
-            )
-        order.driver_id = driver.id
+            ).scalar_one_or_none()
+            if driver is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown driver"
+                )
+            order.driver_id = driver.id
 
     if payload.state is not None:
         current_state = OrderState(order.state)
@@ -170,6 +186,7 @@ async def update_order(
 
     await db.commit()
     await db.refresh(order)
+    await invalidate_tenant_tiles(redis, current.tenant_id)
     return _to_out(order)
 
 

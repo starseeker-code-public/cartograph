@@ -9,6 +9,11 @@ One tile carries four layers, all tenant-scoped:
 
 Layers are independent ``ST_AsMVT`` aggregates concatenated with ``||``;
 an empty layer contributes zero bytes (COALESCE against an empty bytea).
+
+Feature selection uses a tile envelope expanded by the MVT buffer margin
+(``margin => buffer/extent``) — filtering on the exact envelope would drop
+features that belong in the neighboring tile's buffer skirt, slicing points
+and rings at tile seams.
 """
 
 from __future__ import annotations
@@ -24,7 +29,9 @@ BUFFER = 64
 _TILE_SQL = text("""
     WITH bounds AS (
         SELECT ST_TileEnvelope(:z, :x, :y) AS env,
-               ST_Transform(ST_TileEnvelope(:z, :x, :y), 4326) AS env4326
+               ST_Transform(
+                   ST_TileEnvelope(:z, :x, :y, margin => :margin), 4326
+               ) AS filter_env
     )
     SELECT
         COALESCE((
@@ -35,7 +42,7 @@ _TILE_SQL = text("""
                            ST_Transform(sa.geom, 3857), bounds.env, :extent, :buf, true
                        ) AS geom
                 FROM service_areas sa, bounds
-                WHERE sa.tenant_id = :tenant AND sa.geom && bounds.env4326
+                WHERE sa.tenant_id = :tenant AND sa.geom && bounds.filter_env
             ) t
             WHERE t.geom IS NOT NULL
         ), ''::bytea)
@@ -45,13 +52,17 @@ _TILE_SQL = text("""
             FROM (
                 SELECT o.id, o.geofence_meters AS radius_m,
                        ST_AsMVTGeom(
-                           ST_Transform(ST_Buffer(o.delivery, o.geofence_meters)::geometry, 3857),
+                           ST_Transform(ring.geom, 3857),
                            bounds.env, :extent, :buf, true
                        ) AS geom
-                FROM orders o, bounds
+                FROM orders o
+                CROSS JOIN bounds
+                CROSS JOIN LATERAL (
+                    SELECT ST_Buffer(o.delivery, o.geofence_meters)::geometry AS geom
+                ) ring
                 WHERE o.tenant_id = :tenant
                   AND o.state IN ('assigned', 'picked_up')
-                  AND ST_Buffer(o.delivery, o.geofence_meters)::geometry && bounds.env4326
+                  AND ring.geom && bounds.filter_env
             ) t
             WHERE t.geom IS NOT NULL
         ), ''::bytea)
@@ -70,7 +81,7 @@ _TILE_SQL = text("""
                 ) AS r(role, pt)
                 WHERE o.tenant_id = :tenant
                   AND o.state IN ('created', 'assigned', 'picked_up')
-                  AND r.pt::geometry && bounds.env4326
+                  AND r.pt::geometry && bounds.filter_env
             ) t
             WHERE t.geom IS NOT NULL
         ), ''::bytea)
@@ -86,7 +97,7 @@ _TILE_SQL = text("""
                 FROM drivers d, bounds
                 WHERE d.tenant_id = :tenant
                   AND d.current_location IS NOT NULL
-                  AND d.current_location::geometry && bounds.env4326
+                  AND d.current_location::geometry && bounds.filter_env
             ) t
             WHERE t.geom IS NOT NULL
         ), ''::bytea) AS tile
@@ -96,7 +107,15 @@ _TILE_SQL = text("""
 async def render_tile(db: AsyncSession, tenant_id: UUID, z: int, x: int, y: int) -> bytes:
     result = await db.execute(
         _TILE_SQL,
-        {"z": z, "x": x, "y": y, "tenant": tenant_id, "extent": EXTENT, "buf": BUFFER},
+        {
+            "z": z,
+            "x": x,
+            "y": y,
+            "tenant": tenant_id,
+            "extent": EXTENT,
+            "buf": BUFFER,
+            "margin": BUFFER / EXTENT,
+        },
     )
     tile = result.scalar_one()
     return bytes(tile) if tile is not None else b""

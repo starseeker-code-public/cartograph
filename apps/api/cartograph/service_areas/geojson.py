@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from shapely.geometry import MultiPolygon, Polygon, shape
+from shapely.ops import unary_union
 from shapely.validation import explain_validity
 
 
@@ -69,10 +70,22 @@ def parse_multipolygon(doc: dict[str, Any]) -> MultiPolygon:
     if not polygons:
         raise GeoJSONError("No polygon found in GeoJSON input")
 
-    multi = MultiPolygon(polygons)
-    if multi.is_empty:
+    # Each component must be individually valid (self-intersections rejected
+    # with a precise message)...
+    for polygon in polygons:
+        if polygon.is_empty:
+            raise GeoJSONError("Geometry contains an empty polygon")
+        if not polygon.is_valid:
+            raise GeoJSONError(f"Invalid geometry: {explain_validity(polygon)}")
+
+    # ...but polygons that touch or overlap each other are legitimate input
+    # (adjacent delivery districts). A raw MultiPolygon of them is OGC-invalid,
+    # so union the components instead of rejecting them.
+    merged = unary_union(polygons)
+    if isinstance(merged, Polygon):
+        merged = MultiPolygon([merged])
+    if not isinstance(merged, MultiPolygon) or merged.is_empty:
         raise GeoJSONError("Geometry is empty")
-    if not multi.is_valid:
-        raise GeoJSONError(f"Invalid geometry: {explain_validity(multi)}")
-    _check_coordinate_range(multi)
-    return multi
+
+    _check_coordinate_range(merged)
+    return merged

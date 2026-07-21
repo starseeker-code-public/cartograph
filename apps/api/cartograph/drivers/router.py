@@ -20,7 +20,7 @@ from cartograph.drivers.schemas import (
 from cartograph.geofences.router import to_event_out
 from cartograph.geofences.service import evaluate_geofences
 from cartograph.orders.schemas import Point
-from cartograph.routes.engine import RoadNetworkUnavailable
+from cartograph.routes.engine import RoadNetworkUnavailable, RouteNotFound
 from cartograph.routes.optimizer import UnreachableStop
 from cartograph.routes.schemas import OptimizedStopOut, OptimizeResponse
 from cartograph.routes.service import (
@@ -126,8 +126,10 @@ async def _check_rate_limit(redis: Redis, driver_id: UUID) -> None:
     """Per-driver fixed-window limiter on location updates."""
     key = f"rl:loc:{driver_id}"
     count = await redis.incr(key)
-    if count == 1:
-        await redis.expire(key, 60)
+    # NX on every call (not only count==1): if a crash between INCR and
+    # EXPIRE ever leaves the key without a TTL, the next request heals it
+    # instead of rate-limiting the driver forever.
+    await redis.expire(key, 60, nx=True)
     if count > settings.location_rate_limit_per_minute:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -146,7 +148,8 @@ async def optimize(
 
     try:
         result = await optimize_driver_route(db, driver)
-    except RoadNetworkUnavailable as exc:
+    except (RoadNetworkUnavailable, RouteNotFound) as exc:
+        # RouteNotFound here means the vertices table is empty/mid-reload.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc

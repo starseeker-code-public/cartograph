@@ -239,3 +239,51 @@ async def test_tenant_isolation(
 
 async def test_unauthenticated_rejected(client: httpx.AsyncClient) -> None:
     assert (await client.get("/api/service-areas")).status_code == 401
+
+
+async def test_adjacent_polygons_are_unioned(
+    client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Two valid districts sharing an edge are legitimate input; they must be
+    unioned, not rejected as an OGC-invalid MultiPolygon."""
+    adjacent = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-3.71, 40.41],
+                            [-3.70, 40.41],
+                            [-3.70, 40.43],
+                            [-3.71, 40.43],
+                            [-3.71, 40.41],
+                        ]
+                    ],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-3.70, 40.41],
+                            [-3.69, 40.41],
+                            [-3.69, 40.43],
+                            [-3.70, 40.43],
+                            [-3.70, 40.41],
+                        ]
+                    ],
+                },
+            },
+        ],
+    }
+    resp = await _create(client, auth_headers, adjacent)
+    assert resp.status_code == 201, resp.text
+    # Union merges the shared edge into one polygon.
+    assert len(resp.json()["geometry"]["coordinates"]) == 1

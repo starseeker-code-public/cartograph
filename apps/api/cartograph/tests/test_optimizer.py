@@ -125,3 +125,35 @@ def test_empty_and_single_stop() -> None:
     coords = {START_VERTEX: (0.0, 0.0), 1: (1.0, 1.0)}
     stops = [Stop(order_id=uuid4(), kind="delivery", vertex=1, lng=0, lat=0)]
     assert optimize_sequence(_euclidean_matrix(coords), stops, START_VERTEX) == [0]
+
+
+def test_asymmetric_missing_pair_does_not_abort() -> None:
+    """One-way networks: a missing (u,v) pair prices the move out (inf),
+    it must not raise while a feasible tour exists."""
+    coords = {START_VERTEX: (0.0, 0.0), 1: (10.0, 0.0), 2: (20.0, 0.0)}
+    matrix = _euclidean_matrix(coords)
+    del matrix[(2, 1)]  # can't go from stop 2 back to stop 1
+
+    stops = [
+        Stop(order_id=uuid4(), kind="delivery", vertex=1, lng=0, lat=0),
+        Stop(order_id=uuid4(), kind="delivery", vertex=2, lng=0, lat=0),
+    ]
+    tour = optimize_sequence(matrix, stops, START_VERTEX)
+    # Only 1→2 is traversable, so the tour must visit vertex 1 first.
+    assert [stops[i].vertex for i in tour] == [1, 2]
+
+
+def test_fully_unreachable_stop_raises() -> None:
+    from cartograph.routes.optimizer import UnreachableStop
+
+    coords = {START_VERTEX: (0.0, 0.0), 1: (10.0, 0.0)}
+    matrix = _euclidean_matrix(coords)
+    del matrix[(START_VERTEX, 1)]  # island: no way in at all
+
+    stops = [Stop(order_id=uuid4(), kind="delivery", vertex=1, lng=0, lat=0)]
+    try:
+        optimize_sequence(matrix, stops, START_VERTEX)
+    except UnreachableStop:
+        pass
+    else:
+        raise AssertionError("expected UnreachableStop")

@@ -15,8 +15,9 @@ describe("coverageToGeoJSON", () => {
     expect(fc.features).toHaveLength(2);
     for (const feature of fc.features) {
       const ring = feature.geometry.coordinates[0];
-      // Hexagon boundary: 6 vertices (h3-js does not repeat the first).
-      expect(ring.length).toBeGreaterThanOrEqual(6);
+      // Hexagon boundary plus the RFC 7946 closing vertex.
+      expect(ring.length).toBeGreaterThanOrEqual(7);
+      expect(ring[0]).toEqual(ring[ring.length - 1]);
       // GeoJSON [lng, lat] ordering: Madrid is lng≈-3.7, lat≈40.4.
       expect(ring[0][0]).toBeLessThan(0);
       expect(ring[0][1]).toBeGreaterThan(40);

@@ -1,3 +1,8 @@
+# Explicit project name: without it, compose uses the directory name
+# ("compose"), which collides with any other repo using the same layout
+# and lets their `up` clobber this stack (and vice versa).
+name: cartograph-dev
+
 services:
   postgres:
     build:
@@ -9,7 +14,7 @@ services:
       POSTGRES_PASSWORD: cartograph
       POSTGRES_DB: cartograph
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - cartograph_pg:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -22,7 +27,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

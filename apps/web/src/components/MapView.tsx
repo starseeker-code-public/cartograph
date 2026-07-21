@@ -1,7 +1,7 @@
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef } from "react";
 
-import type { Driver, Order } from "../lib/api";
+import type { Driver, Order, RouteGeometry } from "../lib/api";
 import type { CoverageFeatureProps } from "../lib/coverage";
 
 const MADRID: [number, number] = [-3.7038, 40.4168];
@@ -10,7 +10,7 @@ export interface MapViewProps {
   orders: Order[];
   drivers: Driver[];
   coverage: GeoJSON.FeatureCollection<GeoJSON.Polygon, CoverageFeatureProps> | null;
-  routeLine: GeoJSON.LineString | null;
+  routeLine: RouteGeometry | null;
   onSelectOrder: (orderId: string) => void;
   onSelectDriver: (driverId: string) => void;
 }
@@ -68,6 +68,11 @@ export function MapView({
   const selectDriverRef = useRef(onSelectDriver);
   selectOrderRef.current = onSelectOrder;
   selectDriverRef.current = onSelectDriver;
+  // Latest props, for backfilling sources when the map finishes loading —
+  // queries usually resolve before the style does, and data arriving before
+  // `load` would otherwise be dropped until the next poll.
+  const latestRef = useRef({ orders, drivers, coverage, routeLine });
+  latestRef.current = { orders, drivers, coverage, routeLine };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -200,6 +205,23 @@ export function MapView({
           "circle-stroke-color": "#ffffff",
         },
       });
+
+      // Backfill everything that arrived while the style was loading.
+      const latest = latestRef.current;
+      const ordersSource = map.getSource("orders") as maplibregl.GeoJSONSource;
+      ordersSource.setData(ordersToGeoJSON(latest.orders));
+      const driversSource = map.getSource("drivers") as maplibregl.GeoJSONSource;
+      driversSource.setData(driversToGeoJSON(latest.drivers));
+      if (latest.coverage) {
+        (map.getSource("coverage") as maplibregl.GeoJSONSource).setData(latest.coverage);
+      }
+      if (latest.routeLine) {
+        (map.getSource("route") as maplibregl.GeoJSONSource).setData({
+          type: "Feature",
+          properties: {},
+          geometry: latest.routeLine,
+        });
+      }
 
       map.on("click", "order-pins", (event) => {
         const orderId = event.features?.[0]?.properties?.order_id;

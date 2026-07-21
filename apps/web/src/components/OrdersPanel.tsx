@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { Driver, GeofenceEvent, Order, OrderState } from "../lib/api";
+import type { Driver, GeofenceEvent, Order, OrderState, RouteGeometry } from "../lib/api";
 import { api } from "../lib/api";
 import { formatDistance, formatDuration, formatTime } from "../lib/format";
 
@@ -24,13 +24,14 @@ interface Props {
   drivers: Driver[];
   selectedOrderId: string | null;
   onSelect: (orderId: string | null) => void;
-  onShowRoute: (line: GeoJSON.LineString | null) => void;
+  onShowRoute: (line: RouteGeometry | null) => void;
 }
 
 export function OrdersPanel({ orders, drivers, selectedOrderId, onSelect, onShowRoute }: Props) {
   const selected = orders.find((o) => o.id === selectedOrderId) ?? null;
   return selected ? (
     <OrderDetail
+      key={selected.id} // remount on order switch: mutation state must not leak
       order={selected}
       drivers={drivers}
       onBack={() => {
@@ -75,7 +76,7 @@ function OrderDetail({
   order: Order;
   drivers: Driver[];
   onBack: () => void;
-  onShowRoute: (line: GeoJSON.LineString | null) => void;
+  onShowRoute: (line: RouteGeometry | null) => void;
 }) {
   const queryClient = useQueryClient();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -87,14 +88,15 @@ function OrderDetail({
   });
 
   const patch = useMutation({
-    mutationFn: (body: { state?: OrderState; driver_id?: string }) =>
+    // driver_id: null unassigns (the API distinguishes null from absent).
+    mutationFn: (body: { state?: OrderState; driver_id?: string | null }) =>
       api.patch<Order>(`/api/orders/${order.id}`, body),
     onSuccess: invalidate,
   });
 
   const eta = useMutation({
     mutationFn: () =>
-      api.get<{ eta_seconds: number; distance_m: number; geometry: GeoJSON.LineString }>(
+      api.get<{ eta_seconds: number; distance_m: number; geometry: RouteGeometry }>(
         `/api/orders/${order.id}/eta`,
       ),
     onSuccess: (data) => {
@@ -141,7 +143,9 @@ function OrderDetail({
             value={order.driver_id ?? ""}
             onChange={(e) =>
               patch.mutate(
-                e.target.value ? { driver_id: e.target.value, state: "assigned" } : {},
+                e.target.value
+                  ? { driver_id: e.target.value, state: "assigned" }
+                  : { driver_id: null },
               )
             }
             disabled={order.state !== "created" && order.state !== "assigned"}
