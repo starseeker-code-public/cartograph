@@ -50,6 +50,22 @@ test-cov:
 seed email="dispatcher@example.com" password="cartograph-dev":
     cd {{api_dir}} && uv run python -m cartograph.seed {{email}} {{password}}
 
+# ── Web ───────────────────────────────────────────────────────────────────────
+
+web_dir := "apps/web"
+
+web-dev:
+    cd {{web_dir}} && npm run dev
+
+web-install:
+    cd {{web_dir}} && npm install
+
+web-build:
+    cd {{web_dir}} && npm run build
+
+web-test:
+    cd {{web_dir}} && npm run test
+
 # ── Migrations ────────────────────────────────────────────────────────────────
 
 migrate:
