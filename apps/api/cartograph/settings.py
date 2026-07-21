@@ -22,5 +22,12 @@ class Settings(BaseSettings):
     tile_cache_ttl: int = 300
     eta_cache_ttl: int = 3600
 
+    # Geofences
+    geofence_dwell_seconds: int = 600
+    # GPS fixes with worse accuracy than this don't trigger geofence events.
+    geofence_accuracy_max_m: float = 100.0
+    # Per-driver ceiling on location updates (the device is the source).
+    location_rate_limit_per_minute: int = 120
+
 
 settings = Settings()

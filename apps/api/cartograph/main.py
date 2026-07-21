@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from cartograph.auth.router import router as auth_router
+from cartograph.drivers.router import router as drivers_router
+from cartograph.geofences.router import router as geofences_router
 from cartograph.orders.router import router as orders_router
 from cartograph.routes.router import router as routes_router
 from cartograph.service_areas.router import router as service_areas_router
@@ -22,6 +24,8 @@ app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(service_areas_router, prefix=settings.api_prefix)
 app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(routes_router, prefix=settings.api_prefix)
+app.include_router(drivers_router, prefix=settings.api_prefix)
+app.include_router(geofences_router, prefix=settings.api_prefix)
 
 app.add_middleware(
     CORSMiddleware,
