@@ -12,13 +12,16 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from uuid import uuid4
 
+import httpx
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from cartograph.auth.models import Tenant, User
 from cartograph.settings import settings
 
 API_DIR = Path(__file__).resolve().parents[2]
@@ -52,3 +55,40 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
         await session.rollback()
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client() -> AsyncGenerator[httpx.AsyncClient, None]:
+    from cartograph.main import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def tenant_user(db_session: AsyncSession) -> tuple[Tenant, User, str]:
+    """A committed tenant + user; returns (tenant, user, password)."""
+    from cartograph.auth.security import hash_password
+
+    password = "test-password-123"
+    tenant = Tenant(slug=f"t-{uuid4().hex[:10]}", name="Test Tenant")
+    db_session.add(tenant)
+    await db_session.flush()
+    user = User(
+        tenant_id=tenant.id,
+        email=f"u-{uuid4().hex[:10]}@example.com",
+        password_hash=hash_password(password),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    return tenant, user, password
+
+
+@pytest_asyncio.fixture
+async def auth_headers(tenant_user: tuple[Tenant, User, str]) -> dict[str, str]:
+    from cartograph.auth.security import create_access_token
+
+    _, user, _ = tenant_user
+    token = create_access_token(user.id, user.tenant_id)
+    return {"Authorization": f"Bearer {token}"}

@@ -2,6 +2,8 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from cartograph.auth.router import router as auth_router
+from cartograph.service_areas.router import router as service_areas_router
 from cartograph.settings import settings
 
 log = structlog.get_logger()
@@ -13,6 +15,9 @@ app = FastAPI(
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
 )
+
+app.include_router(auth_router, prefix=settings.api_prefix)
+app.include_router(service_areas_router, prefix=settings.api_prefix)
 
 app.add_middleware(
     CORSMiddleware,

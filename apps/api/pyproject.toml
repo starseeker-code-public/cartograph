@@ -24,6 +24,7 @@ dependencies = [
     "opentelemetry-sdk>=1.25",
     "passlib[argon2]>=1.7",
     "python-jose[cryptography]>=3.3",
+    "email-validator>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +62,14 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+module = ["jose.*", "shapely.*", "geoalchemy2.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# One loop for the whole session: the app's module-level engine pools
+# connections bound to the loop they were created on.
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
 testpaths = ["cartograph/tests"]

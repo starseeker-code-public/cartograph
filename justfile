@@ -47,6 +47,9 @@ test:
 test-cov:
     cd {{api_dir}} && uv run pytest --cov=cartograph --cov-report=term-missing
 
+seed email="dispatcher@example.com" password="cartograph-dev":
+    cd {{api_dir}} && uv run python -m cartograph.seed {{email}} {{password}}
+
 # ── Migrations ────────────────────────────────────────────────────────────────
 
 migrate:
