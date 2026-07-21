@@ -63,7 +63,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["jose.*", "shapely.*", "geoalchemy2.*", "mapbox_vector_tile.*"]
+module = ["jose.*", "shapely.*", "geoalchemy2.*", "mapbox_vector_tile.*", "h3.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

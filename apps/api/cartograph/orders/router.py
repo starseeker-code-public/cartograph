@@ -1,6 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
+import h3
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2.shape import to_shape
 from redis.asyncio import Redis
@@ -74,6 +75,9 @@ async def create_order(
         delivery_address=payload.delivery_address,
         promised_at=payload.promised_at,
         geofence_meters=payload.geofence_meters,
+        # H3 res 8 (~0.7 km hexes) for coverage analytics (Phase 8).
+        pickup_h3_8=h3.latlng_to_cell(payload.pickup.lat, payload.pickup.lng, 8),
+        delivery_h3_8=h3.latlng_to_cell(payload.delivery.lat, payload.delivery.lng, 8),
     )
 
     # Best-effort ETA at creation; absent road network must not block intake.

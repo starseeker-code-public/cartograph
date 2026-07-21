@@ -2,6 +2,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from cartograph.analytics.router import router as analytics_router
 from cartograph.auth.router import router as auth_router
 from cartograph.drivers.router import router as drivers_router
 from cartograph.geofences.router import router as geofences_router
@@ -27,6 +28,7 @@ app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(routes_router, prefix=settings.api_prefix)
 app.include_router(drivers_router, prefix=settings.api_prefix)
 app.include_router(geofences_router, prefix=settings.api_prefix)
+app.include_router(analytics_router, prefix=settings.api_prefix)
 # Tile paths (/tiles/... and /api/tiles/stats) are absolute inside the router.
 app.include_router(tiles_router)
 
