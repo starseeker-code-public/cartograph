@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgis/postgis:16-3.4
+    build:
+      context: .
+      dockerfile: postgres.Dockerfile
+    image: cartograph-postgres:16-3.4-3.6
     environment:
       POSTGRES_USER: cartograph
       POSTGRES_PASSWORD: cartograph

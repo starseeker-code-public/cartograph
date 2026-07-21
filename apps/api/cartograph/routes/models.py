@@ -22,12 +22,10 @@ class Route(Base):
     )
     order_ids: Mapped[list[UUID]] = mapped_column(ARRAY(PgUUID(as_uuid=True)))
     sequence: Mapped[list[int]] = mapped_column(ARRAY(Integer))
-    geom: Mapped[Any] = mapped_column(Geometry("LINESTRING", srid=4326))
+    geom: Mapped[Any] = mapped_column(Geometry("LINESTRING", srid=4326, spatial_index=False))
     total_distance_m: Mapped[int] = mapped_column(Integer)
     total_duration_s: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index("ix_routes_geom", "geom", postgresql_using="gist"),

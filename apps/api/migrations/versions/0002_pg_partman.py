@@ -40,12 +40,16 @@ def upgrade() -> None:
                 -- Detach the default partition so partman can take over.
                 ALTER TABLE geofence_events DETACH PARTITION geofence_events_default;
 
+                -- p_default_table := false: we manage the default partition
+                -- ourselves (created in 0001); letting partman create its own
+                -- would collide on the geofence_events_default name.
                 PERFORM partman.create_parent(
                     p_parent_table   := 'public.geofence_events',
                     p_control        := 'occurred_at',
                     p_type           := 'range',
                     p_interval       := '1 month',
-                    p_premake        := 4
+                    p_premake        := 4,
+                    p_default_table  := false
                 );
 
                 -- Re-attach the default partition for any rows that fall

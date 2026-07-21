@@ -9,7 +9,6 @@ Run ``just up`` first; then ``just test``.
 
 from __future__ import annotations
 
-import asyncio
 import os
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -31,13 +30,6 @@ def _alembic_cfg() -> Config:
     sync_url = settings.database_url.replace("+asyncpg", "")
     cfg.set_main_option("sqlalchemy.url", sync_url)
     return cfg
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="session", autouse=True)

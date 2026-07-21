@@ -19,11 +19,9 @@ class ServiceArea(Base):
         PgUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE")
     )
     name: Mapped[str] = mapped_column(String(255))
-    geom: Mapped[Any] = mapped_column(Geometry("MULTIPOLYGON", srid=4326))
+    geom: Mapped[Any] = mapped_column(Geometry("MULTIPOLYGON", srid=4326, spatial_index=False))
     rules: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

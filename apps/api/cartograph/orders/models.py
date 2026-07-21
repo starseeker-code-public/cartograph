@@ -27,8 +27,8 @@ class Order(Base):
     tenant_id: Mapped[UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE")
     )
-    pickup: Mapped[Any] = mapped_column(Geography("POINT", srid=4326))
-    delivery: Mapped[Any] = mapped_column(Geography("POINT", srid=4326))
+    pickup: Mapped[Any] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
+    delivery: Mapped[Any] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     pickup_address: Mapped[str] = mapped_column(String(500))
     delivery_address: Mapped[str] = mapped_column(String(500))
     promised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -41,9 +41,7 @@ class Order(Base):
     # H3 hex IDs (resolution 8 ≈ 0.7 km) — see Phase 8 (coverage analytics).
     pickup_h3_8: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     delivery_h3_8: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index("ix_orders_pickup", "pickup", postgresql_using="gist"),

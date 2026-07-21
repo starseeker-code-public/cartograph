@@ -6,7 +6,7 @@ Requires PostGIS — run ``just up`` first.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -39,9 +39,7 @@ async def test_tenant_insert(db_session: AsyncSession) -> None:
     db_session.add(tenant)
     await db_session.flush()
 
-    fetched = (
-        await db_session.execute(select(Tenant).where(Tenant.id == tenant.id))
-    ).scalar_one()
+    fetched = (await db_session.execute(select(Tenant).where(Tenant.id == tenant.id))).scalar_one()
     assert fetched.name == "Acme Couriers"
 
 
@@ -52,8 +50,7 @@ async def test_service_area_with_multipolygon(db_session: AsyncSession) -> None:
 
     # A small MultiPolygon around the Puerta del Sol, Madrid.
     multipoly_wkt = (
-        "MULTIPOLYGON(((-3.71 40.41, -3.69 40.41, -3.69 40.43, "
-        "-3.71 40.43, -3.71 40.41)))"
+        "MULTIPOLYGON(((-3.71 40.41, -3.69 40.41, -3.69 40.43, " "-3.71 40.43, -3.71 40.41)))"
     )
     area = ServiceArea(
         id=uuid4(),
@@ -88,7 +85,7 @@ async def test_driver_geography_point(db_session: AsyncSession) -> None:
         phone="+34123456789",
         vehicle_type="bike",
         current_location="SRID=4326;POINT(-3.7038 40.4168)",
-        current_location_updated_at=datetime.now(timezone.utc),
+        current_location_updated_at=datetime.now(UTC),
         state="idle",
     )
     db_session.add(driver)
@@ -119,15 +116,13 @@ async def test_order_insert(db_session: AsyncSession) -> None:
         delivery="SRID=4326;POINT(-3.6900 40.4250)",
         pickup_address="Plaza Mayor, Madrid",
         delivery_address="Retiro Park, Madrid",
-        promised_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        promised_at=datetime.now(UTC) + timedelta(hours=1),
         state="created",
     )
     db_session.add(order)
     await db_session.flush()
 
-    fetched = (
-        await db_session.execute(select(Order).where(Order.id == order.id))
-    ).scalar_one()
+    fetched = (await db_session.execute(select(Order).where(Order.id == order.id))).scalar_one()
     assert fetched.state == "created"
     assert fetched.geofence_meters == 200
 
@@ -136,7 +131,8 @@ async def test_geofence_event_partitioned(db_session: AsyncSession) -> None:
     """Verify geofence_events is a partitioned table."""
     result = await db_session.execute(
         text(
-            "SELECT relkind FROM pg_class WHERE relname = 'geofence_events'"
+            # relkind is a "char"; cast so asyncpg returns str, not bytes.
+            "SELECT relkind::text FROM pg_class WHERE relname = 'geofence_events'"
         )
     )
     # 'p' = partitioned table

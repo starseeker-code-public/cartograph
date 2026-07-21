@@ -37,7 +37,7 @@ class GeofenceEvent(Base):
         PgUUID(as_uuid=True), ForeignKey("orders.id", ondelete="SET NULL"), nullable=True
     )
     kind: Mapped[str] = mapped_column(String(32))
-    location: Mapped[Any] = mapped_column(Geography("POINT", srid=4326))
+    location: Mapped[Any] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

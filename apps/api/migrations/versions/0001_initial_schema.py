@@ -55,7 +55,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column(
             "geom",
-            geoalchemy2.types.Geometry(geometry_type="MULTIPOLYGON", srid=4326),
+            geoalchemy2.types.Geometry(geometry_type="MULTIPOLYGON", srid=4326, spatial_index=False),
             nullable=False,
         ),
         sa.Column(
@@ -97,7 +97,7 @@ def upgrade() -> None:
         sa.Column("vehicle_type", sa.String(16), nullable=False),
         sa.Column(
             "current_location",
-            geoalchemy2.types.Geography(geometry_type="POINT", srid=4326),
+            geoalchemy2.types.Geography(geometry_type="POINT", srid=4326, spatial_index=False),
             nullable=True,
         ),
         sa.Column("current_location_updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -125,12 +125,12 @@ def upgrade() -> None:
         ),
         sa.Column(
             "pickup",
-            geoalchemy2.types.Geography(geometry_type="POINT", srid=4326),
+            geoalchemy2.types.Geography(geometry_type="POINT", srid=4326, spatial_index=False),
             nullable=False,
         ),
         sa.Column(
             "delivery",
-            geoalchemy2.types.Geography(geometry_type="POINT", srid=4326),
+            geoalchemy2.types.Geography(geometry_type="POINT", srid=4326, spatial_index=False),
             nullable=False,
         ),
         sa.Column("pickup_address", sa.String(500), nullable=False),
@@ -186,7 +186,7 @@ def upgrade() -> None:
         sa.Column("sequence", sa.dialects.postgresql.ARRAY(sa.Integer), nullable=False),
         sa.Column(
             "geom",
-            geoalchemy2.types.Geometry(geometry_type="LINESTRING", srid=4326),
+            geoalchemy2.types.Geometry(geometry_type="LINESTRING", srid=4326, spatial_index=False),
             nullable=False,
         ),
         sa.Column("total_distance_m", sa.Integer, nullable=False),
