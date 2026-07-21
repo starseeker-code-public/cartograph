@@ -1,0 +1,109 @@
+# Production stack: Caddy (TLS + SPA) → API → PostGIS/pgrouting + Redis,
+# with nightly pg_dump and daily pg_partman maintenance.
+#
+#   cp .env.prod.example .env
+#   docker compose -f infra/compose/docker-compose.prod.yml --env-file .env up -d
+#
+# Run from the repository root; build contexts assume it.
+
+name: cartograph
+
+services:
+  postgres:
+    build:
+      context: ../compose
+      dockerfile: postgres.Dockerfile
+    image: cartograph-postgres:16-3.4-3.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cartograph}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-cartograph}
+    volumes:
+      - cartograph_pg:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cartograph} -d ${POSTGRES_DB:-cartograph}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    build:
+      context: ../../apps/api
+    image: cartograph-api
+    command: ["alembic", "upgrade", "head"]
+    environment: &api_env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cartograph}:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/${POSTGRES_DB:-cartograph}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?set in .env}
+      DEBUG: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: cartograph-api
+    restart: unless-stopped
+    environment: *api_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    build:
+      context: ../..
+      dockerfile: infra/caddy/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  # Nightly pg_dump into ./backups (rotate 14 days) + daily partman
+  # maintenance. Restore drill: docs/runbooks/backup-restore.md.
+  maintenance:
+    image: cartograph-postgres:16-3.4-3.6
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/maintenance.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-cartograph}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      PGDATABASE: ${POSTGRES_DB:-cartograph}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./maintenance.sh:/maintenance.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  cartograph_pg: {}
+  caddy_data: {}
+  caddy_config: {}

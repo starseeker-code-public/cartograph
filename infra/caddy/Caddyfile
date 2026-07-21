@@ -1,0 +1,24 @@
+# Caddy reverse proxy: auto-HTTPS for the public domain, API + tiles proxied,
+# everything else serves the built SPA.
+#
+# DOMAIN comes from .env (e.g. carto.example.com). For Tailscale-only pilots,
+# set DOMAIN to the machine's MagicDNS name and keep 443 unexposed publicly —
+# see docs/runbooks/deploy.md.
+
+{$DOMAIN:localhost} {
+	encode gzip zstd
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle /tiles/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}
