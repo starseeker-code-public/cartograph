@@ -20,6 +20,14 @@ from cartograph.drivers.schemas import (
 from cartograph.geofences.router import to_event_out
 from cartograph.geofences.service import evaluate_geofences
 from cartograph.orders.schemas import Point
+from cartograph.routes.engine import RoadNetworkUnavailable
+from cartograph.routes.optimizer import UnreachableStop
+from cartograph.routes.schemas import OptimizedStopOut, OptimizeResponse
+from cartograph.routes.service import (
+    DriverHasNoLocation,
+    NoStopsToOptimize,
+    optimize_driver_route,
+)
 from cartograph.settings import settings
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
@@ -125,6 +133,49 @@ async def _check_rate_limit(redis: Redis, driver_id: UUID) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Location update rate limit exceeded",
         )
+
+
+@router.post("/{driver_id}/optimize", response_model=OptimizeResponse)
+async def optimize(
+    driver_id: UUID,
+    current: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OptimizeResponse:
+    """Sequence the driver's active stops (NN + 2-opt over road times)."""
+    driver = await _get_owned(db, current, driver_id)
+
+    try:
+        result = await optimize_driver_route(db, driver)
+    except RoadNetworkUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except (NoStopsToOptimize, DriverHasNoLocation) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except UnreachableStop as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    await db.commit()
+    await db.refresh(result.route)
+
+    return OptimizeResponse(
+        route_id=result.route.id,
+        stops=[
+            OptimizedStopOut(
+                order_id=s.order_id,
+                kind=s.kind,
+                lng=s.lng,
+                lat=s.lat,
+                arrival_offset_s=round(s.arrival_offset_s),
+                cumulative_distance_m=round(s.cumulative_distance_m),
+            )
+            for s in result.stops
+        ],
+        total_duration_s=round(result.total_duration_s),
+        total_distance_m=round(result.total_distance_m),
+    )
 
 
 @router.post("/{driver_id}/location", response_model=LocationUpdateResult)
