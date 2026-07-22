@@ -180,12 +180,19 @@ async def update_order(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Cannot transition from {current_state.value} to {payload.state.value}",
             )
-        if payload.state == OrderState.ASSIGNED and order.driver_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Cannot mark assigned without a driver",
-            )
         order.state = payload.state.value
+
+    # Invariant, checked after ALL mutations so no combination of driver_id
+    # and state in one PATCH can sneak past it: an order that is assigned or
+    # in flight must have a driver.
+    if (
+        order.state in (OrderState.ASSIGNED.value, OrderState.PICKED_UP.value)
+        and order.driver_id is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"A {order.state} order must have a driver",
+        )
 
     if payload.geofence_meters is not None:
         order.geofence_meters = payload.geofence_meters

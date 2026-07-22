@@ -256,3 +256,34 @@ async def test_unassign_rejected_after_pickup(
         f"/api/orders/{created['id']}", json={"driver_id": None}, headers=auth_headers
     )
     assert resp.status_code == 422
+
+
+async def test_unassign_plus_state_combo_cannot_orphan_order(
+    road_grid: None,
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    tenant_user: tuple[Tenant, User, str],
+    db_session: AsyncSession,
+) -> None:
+    """One PATCH combining driver_id=null with a state advance must not
+    produce an in-flight order without a driver."""
+    tenant, _, _ = tenant_user
+    driver = await _make_driver(db_session, tenant)
+    created = (await client.post("/api/orders", json=order_payload(), headers=auth_headers)).json()
+    await client.patch(
+        f"/api/orders/{created['id']}",
+        json={"driver_id": str(driver.id), "state": "assigned"},
+        headers=auth_headers,
+    )
+
+    combo = await client.patch(
+        f"/api/orders/{created['id']}",
+        json={"driver_id": None, "state": "picked_up"},
+        headers=auth_headers,
+    )
+    assert combo.status_code == 422
+
+    # Order untouched by the rejected request.
+    current = (await client.get(f"/api/orders/{created['id']}", headers=auth_headers)).json()
+    assert current["state"] == "assigned"
+    assert current["driver_id"] == str(driver.id)
