@@ -12,7 +12,8 @@ set -euo pipefail
 CITY="${1:-madrid}"
 PBF="scripts/osm/${CITY}.osm.pbf"
 DB_HOST="${PGHOST:-localhost}"
-DB_PORT="${PGPORT:-5432}"
+# Local dev postgres is published on 5433 (see infra/compose/docker-compose.dev.yml).
+DB_PORT="${PGPORT:-5433}"
 DB_USER="${PGUSER:-cartograph}"
 DB_NAME="${PGDATABASE:-cartograph}"
 

@@ -71,7 +71,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://cartograph:cartograph@localhost:5432/cartograph
           REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: ci-secret-key
+          SECRET_KEY: ci-only-secret-key-0123456789abcdef
         run: uv run pytest -v --tb=short
 
   web:

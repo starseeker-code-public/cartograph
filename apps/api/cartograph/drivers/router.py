@@ -2,9 +2,11 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2.shape import to_shape
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +31,8 @@ from cartograph.routes.service import (
     optimize_driver_route,
 )
 from cartograph.settings import settings
+
+log = structlog.get_logger()
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
@@ -125,11 +129,17 @@ async def update_driver(
 async def _check_rate_limit(redis: Redis, driver_id: UUID) -> None:
     """Per-driver fixed-window limiter on location updates."""
     key = f"rl:loc:{driver_id}"
-    count = await redis.incr(key)
-    # NX on every call (not only count==1): if a crash between INCR and
-    # EXPIRE ever leaves the key without a TTL, the next request heals it
-    # instead of rate-limiting the driver forever.
-    await redis.expire(key, 60, nx=True)
+    try:
+        count = await redis.incr(key)
+        # NX on every call (not only count==1): if a crash between INCR and
+        # EXPIRE ever leaves the key without a TTL, the next request heals it
+        # instead of rate-limiting the driver forever.
+        await redis.expire(key, 60, nx=True)
+    except RedisError:
+        # Fail open: losing driver positions during a cache outage is worse
+        # than briefly losing the rate limit.
+        log.warning("rate limiter unavailable; allowing location update")
+        return
     if count > settings.location_rate_limit_per_minute:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

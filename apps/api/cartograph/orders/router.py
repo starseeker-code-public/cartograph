@@ -148,6 +148,12 @@ async def update_order(
     # Tri-state: absent = keep, null = unassign, uuid = assign.
     if "driver_id" in payload.model_fields_set:
         if payload.driver_id is None:
+            # Mid-delivery unassignment would orphan a picked-up parcel.
+            if order.state not in (OrderState.CREATED.value, OrderState.ASSIGNED.value):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Cannot unassign a driver from a {order.state} order",
+                )
             order.driver_id = None
             # An assigned order with no driver is a contradiction; fall back
             # to created unless the caller also set an explicit state.
